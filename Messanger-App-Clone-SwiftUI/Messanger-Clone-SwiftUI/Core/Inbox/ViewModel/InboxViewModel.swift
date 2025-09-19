@@ -1,46 +1,58 @@
 //
 //  InboxViewModel.swift
-//   
 //
-//  Created by Dev on 10/09/2025.
 //
 
 import Foundation
 import Combine
 import Firebase
 
-//@MainActor
-class InboxViewModel: ObservableObject{
+@MainActor
+class InboxViewModel: ObservableObject {
     @Published var currentUser: User?
-    @Published var recentMessages = [Message]()
+    @Published var recentMessages = [Message]()   // always unique per chatPartnerId
     
     private var cancellable = Set<AnyCancellable>()
     private var service = InboxService()
     
-    init(){
+    init() {
         setupSubscriber()
         service.observeRecentMessage()
     }
     
-    private func setupSubscriber(){
-        UserService.shared.$currentUser.sink{ [weak self] user in
-            self?.currentUser = user
-        }.store(in: &cancellable)
-        service.$documentChanges.sink { [weak self] changes in
-            self?.loadInitialMessages(fromChanges: changes)
-        }.store(in: &cancellable)
+    private func setupSubscriber() {
+        // keep track of logged in user
+        UserService.shared.$currentUser
+            .sink { [weak self] user in
+                self?.currentUser = user
+            }
+            .store(in: &cancellable)
+        
+        // listen for document changes
+        service.$documentChanges
+            .sink { [weak self] changes in
+                self?.handleChanges(changes)
+            }
+            .store(in: &cancellable)
     }
     
-    private func loadInitialMessages(fromChanges changes: [DocumentChange]){
-        var messages = changes.compactMap({ try? $0.document.data(as: Message.self) })
-        
-            for i  in 0..<messages.count {
-                let message = messages[i]
-                UserService.fetchUser(withUid: message.chatPartnerId){ user in
-                    messages[i].user = user
-                    self.recentMessages.append(messages[i])
+    private func handleChanges(_ changes: [DocumentChange]) {
+        for change in changes {
+            guard var message = try? change.document.data(as: Message.self) else { continue }
+            
+            // fetch user for each chatPartner
+            UserService.fetchUser(withUid: message.chatPartnerId) { [weak self] user in
+                guard let self else { return }
+                message.user = user
+                
+                // ✅ Remove old entry if exists
+                if let index = self.recentMessages.firstIndex(where: { $0.chatPartnerId == message.chatPartnerId }) {
+                    self.recentMessages.remove(at: index)
                 }
+                
+                // ✅ Insert new message at top
+                self.recentMessages.insert(message, at: 0)
             }
-       }
+        }
+    }
 }
-

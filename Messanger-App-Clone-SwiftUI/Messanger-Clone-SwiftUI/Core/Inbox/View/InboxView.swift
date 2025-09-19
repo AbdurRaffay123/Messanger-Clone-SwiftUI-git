@@ -5,32 +5,48 @@ struct InboxView: View {
     @StateObject var viewModel = InboxViewModel()
     @State private var selectedUser: User?
     
+    // Navigation path for stack
+    @State private var path = NavigationPath()
+    
     private var user: User? {
-        return viewModel.currentUser
+        viewModel.currentUser
     }
     
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             List {
-                ActiveNowView()
-                    .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets())
-                    .padding(.vertical)
-                    .padding(.horizontal, 4)
+                // ✅ Active Now Section
+                Section {
+                    ActiveNowView()
+                        .padding(.vertical)
+                        .padding(.horizontal, 4)
+                        .listRowInsets(EdgeInsets())
+                        .listRowSeparator(.hidden)
+                }
                 
-                ForEach(viewModel.recentMessages) { message in
-                    NavigationLink(value: Route.chatView(message.user!)) {
-                        InboxRowView(message: message)
+                // ✅ Recent Messages Section
+                Section {
+                    ForEach(viewModel.recentMessages) { message in
+                        NavigationLink(value: Route.chatView(message.user!)) {
+                            InboxRowView(message: message)
+                        }
+                        .buttonStyle(.plain) // 👈 removes system chevron + blue highlight
                     }
                 }
             }
-            .listStyle(PlainListStyle())
+            .listStyle(.plain)
             .navigationDestination(for: Route.self) { route in
                 switch route {
                 case .profile(let user):
                     ProfileView(user: user)
                 case .chatView(let user):
                     ChatView(user: user)
+                }
+            }
+            .onChange(of: selectedUser) { newValue in
+                if let user = newValue {
+                    showMessageView = false
+                    path.append(Route.chatView(user))
                 }
             }
             .fullScreenCover(isPresented: $showMessageView) {
@@ -65,8 +81,3 @@ struct InboxView: View {
         }
     }
 }
-
-#Preview {
-    InboxView()
-}
-
